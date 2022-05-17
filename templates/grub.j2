@@ -1,0 +1,32 @@
+# vi: ft=cfg                                                                                                                                                                 
+set default="0"
+ 
+if loadfont unicode ; then
+    set gfxmode=1024x768,800x600,auto
+    set gfxpayload=800x600,1024x768
+    terminal_output gfxterm
+fi
+ 
+function load_video {
+    insmod efi_gop
+    insmod efi_uga
+    insmod video_bochs
+    insmod video_cirrus
+    insmod all_video
+}
+ 
+load_video
+set gfxpayload=keep
+insmod linuxefi
+insmod net
+insmod efinet
+insmod tftp
+insmod gzio
+insmod part_gpt
+insmod ext2
+set timeout=10
+
+menuentry "{{ menu_name }}" {
+    linuxefi   /{{ kernel }} {{ boot_args }}
+    initrdefi  /{{ initrd }}
+}

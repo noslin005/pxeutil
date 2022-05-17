@@ -1,0 +1,24 @@
+pxeimages:
+  - name: centos7
+    version: 7
+    kernel: /images/centos/7/vmlinuz
+    initrd: /images/centos/7/initrd.img
+
+  - name: centos8
+    version: 8
+    kernel: /images/centos/7/vmlinuz
+    initrd: /images/centos/7/initrd.img
+
+kickstarts:
+  - name: centos-nvme
+    family: rhel
+    url: "http://10.12.17.6/os/centos/ks/centos-nvme.ks"
+
+bootmenus:
+  - name: centos7nvme
+    image: centos7
+    args: "inst.repo=http://10.12.17.6/os/centos/7/ inst.ks=http://10.12.17.6/os/centos/ks/centos-nvme.ks ip=dhcp"
+
+  - name: centos7sda
+    image: centos7
+    args: "inst.repo=http://10.12.17.6/os/centos/7/ inst.ks=http://10.12.17.6/os/centos/ks/centos-sda.ks ip=dhcp"

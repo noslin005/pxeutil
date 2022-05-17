@@ -1,0 +1,9 @@
+DEFAULT menu.c32
+PROMPT 0
+MENU TITLE #### LEGACY PXE BOOT MENU ####
+TIMEOUT 120
+
+LABEL {{ menu_name }}
+    MENU LABEL {{ menu_name }}
+    kernel ::{{ kernel }}
+    append initrd=::{{ initrd }} {{ boot_args }}
