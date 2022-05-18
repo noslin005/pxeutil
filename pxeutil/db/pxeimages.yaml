@@ -1,0 +1,15 @@
+bootmenus:
+-   boot_args: boot=nfs
+    comment: ''
+    image: rocky
+    menu_name: rockysda
+pxeimages:
+-   id: fedora36
+    initrd: /tmp/images/fedora/server/36/initrd.img
+    kernel: /tmp/images/fedora/server/36/vmlinuz
+    name: fedora
+    version: '36'
+-   initrd: image/rocky/8.5/initrd.img
+    kernel: image/rocky/8.5/vmlinuz
+    name: rocky
+    version: '8.5'

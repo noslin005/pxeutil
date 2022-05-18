@@ -12,18 +12,21 @@ from netaddr import EUI
 from netaddr.core import AddrFormatError
 from yaml.loader import SafeLoader
 
+__author__ = 'Nilson Lopes <noslin005@gmail.com>'
+
+TOP_DIR = os.path.dirname(os.path.realpath(__file__))
 # TFTP_DIR = '/netshare/tftp'
 TFTP_DIR = '/tmp'
 BOOT_IMAGES_DIR = f"{TFTP_DIR}/images"
 UEFI_PXE_DIR = f"{TFTP_DIR}/uefi"
 BIOS_PXE_DIR = f"{TFTP_DIR}/uefi"
 
-TEMPLATE_DIR = 'templates'
-PXEIMAGES_DBFILE = 'db/pxeimages.yaml'
-BOOTMENU_DBFILE = 'db/bootmenus.yaml'
+TEMPLATE_DIR = '%s/templates' % TOP_DIR
+PXEIMAGES_DBFILE = '%s/db/pxeimages.yaml' % TOP_DIR
 
 
-def load_config(filename: str):
+def load_config():
+    filename = PXEIMAGES_DBFILE
     try:
         with open(filename) as f:
             return yaml.load(f, Loader=SafeLoader) or {}
@@ -31,13 +34,31 @@ def load_config(filename: str):
         return {}
 
 
-def save_config(filename: str, data: dict):
+def save_config(data: dict):
+    filename = PXEIMAGES_DBFILE
     try:
         with open(filename, 'w') as f:
             yaml.dump(data, f, sort_keys=True, indent=4, encoding='utf-8')
     except IOError as err:
         print("Error while saving %s: \nError: %s" % (filename, str(err)))
         return False
+
+
+def load_template(template_name):
+    try:
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader(TEMPLATE_DIR))
+        t = env.get_template(template_name)
+        return t
+    except TemplateNotFound:
+        print('Error: could not find template %s' % template_name)
+        return
+
+
+def format_mac(mac_addr: str):
+    try:
+        return str(EUI(mac_addr)).lower()
+    except AddrFormatError:
+        return
 
 
 def copy_file(source, destination):
@@ -59,22 +80,20 @@ def create_pxe_image(name, version, kernel, initrd):
     '''
     tftp_path = 'image/{}/{}/{}'
 
-    image_id = "%s%s" % (name, version)
     image = {
         'name': name,
         'version': version,
-        'id': image_id,
         'kernel': tftp_path.format(name, version, kernel),
         'initrd': tftp_path.format(name, version, initrd)
     }
 
     # read existing value
-    data = load_config(PXEIMAGES_DBFILE)
+    data = load_config()
 
     # If we have an existing image, update it
     try:
         for img in data.get('pxeimages', []):
-            if img.get('id') == image_id:
+            if img.get('name') == name:
                 img.update(image)
         if image not in data.get('pxeimages', []):
             data['pxeimages'].append(image)
@@ -84,22 +103,22 @@ def create_pxe_image(name, version, kernel, initrd):
         data['pxeimages'].append(image)
 
     # print(data)
-    save_config(filename=PXEIMAGES_DBFILE, data=data)
+    save_config(data=data)
     return data
 
 
 def create_boot_menu(menu_name: str,
-                     image_id: str,
+                     image_name: str,
                      boot_args: str = '',
                      comment: str = ''):
     ''' creates a boot menu using existing pxeimages
     '''
 
-    pxedata = load_config(PXEIMAGES_DBFILE)
+    pxedata = load_config()
     pxeimage = {}
     try:
         for img in pxedata['pxeimages']:
-            if img.get('id') == image_id:
+            if img.get('name') == image_name:
                 pxeimage = img
                 break
     except KeyError:
@@ -109,13 +128,12 @@ def create_boot_menu(menu_name: str,
     # create menu from pxeimage
     menu = {
         'menu_name': menu_name,
-        'kernel': pxeimage.get('kernel'),
-        'initrd': pxeimage.get('initrd'),
+        'image': image_name,
         'boot_args': boot_args,
         'comment': comment
     }
 
-    boot_data = load_config(PXEIMAGES_DBFILE)
+    boot_data = load_config()
 
     try:
         for img in boot_data.get('bootmenus', []):
@@ -128,21 +146,11 @@ def create_boot_menu(menu_name: str,
         boot_data['bootmenus'] = []
         boot_data['bootmenus'].append(menu)
 
-    save_config(PXEIMAGES_DBFILE, data=boot_data)
+    save_config(data=boot_data)
     return menu
 
 
-def load_template(template_name):
-    try:
-        env = jinja2.Environment(loader=jinja2.FileSystemLoader(TEMPLATE_DIR))
-        t = env.get_template(template_name)
-        return t
-    except TemplateNotFound:
-        print('Error: could not find template %s' % template_name)
-        return
-
-
-def create_boot_file(menu: dict, mac_addr: str, boot_mode: str = 'uefi'):
+def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
     assert boot_mode in ('uefi', 'legacy')
 
     if boot_mode == 'uefi':
@@ -152,6 +160,22 @@ def create_boot_file(menu: dict, mac_addr: str, boot_mode: str = 'uefi'):
         template = 'pxelinux.j2'
         filename = '/tmp/01-%s' % mac_addr
 
+    data = load_config()
+
+    menu = next((m for m in data['bootmenus'] if m.get('menu_name') == menu_name), None)
+
+    if not menu:
+        print('Menu %s does not exists' % menu_name)
+        return
+
+    image = next((img for img in data['pxeimages'] if img['name'] == menu['image']), None)
+
+    if not image:
+        print('Can not find a pxe image for menu %s' % menu_name)
+        return
+
+    menu.update(image)
+
     try:
         t = load_template(template)
         boot_file = t.render(menu)
@@ -160,13 +184,6 @@ def create_boot_file(menu: dict, mac_addr: str, boot_mode: str = 'uefi'):
     except Exception as err:
         print('%s' % err)
         return False
-
-
-def format_mac(mac_addr: str):
-    try:
-        return str(EUI(mac_addr)).lower()
-    except AddrFormatError:
-        return
 
 
 def import_pxe_files(kernel, initrd, os_name, os_version, variant=''):
@@ -229,30 +246,24 @@ def menu():
                              default='',
                              help='OS Variant, ie. server')
 
-    # #
-    # create_menu = subparser.add_parser('create')
-    # assign_menu = subparser.add_parser('assign')
+    # create menus
+    create_menu = subparser.add_parser('create')
+    create_menu.add_argument('-n', '--name', metavar='menuname', dest='menuname', required=True, help='Boot menu name')
+    create_menu.add_argument('-i', '--image', metavar='image', dest='image', required=True,  help='Image ID')
+    create_menu.add_argument('-a', '--boot-args', metavar='boot_args',
+                             dest='boot_args',  required=True, help='Boot arguments')
+
+    # assign menu to hosts
+    assign_menu = subparser.add_parser('assign')
+    assign_menu.add_argument('-m', '--mac', metavar='mac', required=True, help='host MAC Address')
+    assign_menu.add_argument('-n', '--menu', metavar='menu', required=True, help='PXE Menu to assign')
+    assign_menu.add_argument('-b', '--boot-mode', metavar='bootmode', dest='bootmode', choices=('uefi',
+                             'legacy'), default='uefi', help='PXE Menu to assign')
 
     return parser.parse_args()
 
 
-if __name__ == '__main__':
-    # name = 'rocky'
-    # version = '8.6'
-    # kernel = 'vmlinuz'
-    # initrd = 'initrd.img'
-    # boot_args = ('inst.repo=https://download.rockylinux.org'
-    #              '/pub/rocky/8/BaseOS/x86_64/os/ ip=dhcp')
-
-    # mac = format_mac('3C:EC:EF:F3:29:BE')
-
-    # create_pxe_image(name=name, version=version,
-    # kernel=kernel, initrd=initrd)
-    # menu = create_boot_menu(menu_name='rocky8sda',
-    #                         image_id='rocky8.6',
-    #                         boot_args=boot_args)
-    # create_boot_file(menu=menu, mac_addr=mac, boot_mode='uefi')
-
+def main():
     args = menu()
 
     if args.command == 'import':
@@ -261,3 +272,11 @@ if __name__ == '__main__':
                          kernel=args.kernel,
                          initrd=args.initrd,
                          variant=args.variant)
+
+    elif args.command == 'create':
+        create_boot_menu(menu_name=args.menuname,
+                         image_name=args.image,
+                         boot_args=args.boot_args)
+
+    elif args.command == 'assign':
+        create_boot_file(menu_name=args.menu, mac_addr=args.mac, boot_mode=args.bootmode)

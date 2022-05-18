@@ -1,6 +1,0 @@
-pxeimages:
--   id: fedora36
-    initrd: /tmp/images/fedora/server/36/initrd.img
-    kernel: /tmp/images/fedora/server/36/vmlinuz
-    name: fedora
-    version: '36'

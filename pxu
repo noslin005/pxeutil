@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+os.execl(sys.executable, sys.executable, '-m', 'pxeutil', *sys.argv[1:])
