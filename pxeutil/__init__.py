@@ -14,15 +14,25 @@ from yaml.loader import SafeLoader
 
 __author__ = 'Nilson Lopes <noslin005@gmail.com>'
 
-TOP_DIR = os.path.dirname(os.path.realpath(__file__))
+HOME_DIR = os.environ.get('HOME')
+CONFIG_DIR = os.path.join(HOME_DIR, ".local/share/pxeutil")
+MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
 # TFTP_DIR = '/netshare/tftp'
 TFTP_DIR = '/tmp'
 BOOT_IMAGES_DIR = f"{TFTP_DIR}/images"
 UEFI_PXE_DIR = f"{TFTP_DIR}/uefi"
 BIOS_PXE_DIR = f"{TFTP_DIR}/uefi"
 
-TEMPLATE_DIR = '%s/templates' % TOP_DIR
-PXEIMAGES_DBFILE = '%s/db/pxeimages.yaml' % TOP_DIR
+TEMPLATE_DIR = '%s/templates' % MODULE_DIR
+PXEIMAGES_DBFILE = '%s/pxeimages.yaml' % CONFIG_DIR
+
+
+def ensure_config_dir_exists():
+    try:
+        path = pathlib.Path(CONFIG_DIR)
+        path.mkdir(parents=True, exist_ok=True)
+    except IOError as err:
+        print(err)
 
 
 def load_config():
@@ -31,6 +41,12 @@ def load_config():
         with open(filename) as f:
             return yaml.load(f, Loader=SafeLoader) or {}
     except FileNotFoundError:
+        print('%s not found. Creating New empty file' % PXEIMAGES_DBFILE)
+        try:
+            with open(filename, 'w') as f:
+                f.write('')
+        except IOError:
+            print('Error while creating config file %s' % PXEIMAGES_DBFILE)
         return {}
 
 
@@ -75,10 +91,13 @@ def copy_file(source, destination):
         print(err)
 
 
-def create_pxe_image(name, version, kernel, initrd):
+def create_pxe_image(name: str, version: str, kernel: str, initrd: str,
+                     variant: str):
     ''' saves a pxe images
     '''
-    tftp_path = 'image/{}/{}/{}'
+
+    tftp_path = 'images/{}/{}/%s/{}' % (
+        variant) if variant else 'images/{}/{}/{}'
 
     image = {
         'name': name,
@@ -113,18 +132,6 @@ def create_boot_menu(menu_name: str,
                      comment: str = ''):
     ''' creates a boot menu using existing pxeimages
     '''
-
-    pxedata = load_config()
-    pxeimage = {}
-    try:
-        for img in pxedata['pxeimages']:
-            if img.get('name') == image_name:
-                pxeimage = img
-                break
-    except KeyError:
-        print('create pxeimages first and then create boot menu')
-        return {}
-
     # create menu from pxeimage
     menu = {
         'menu_name': menu_name,
@@ -136,6 +143,7 @@ def create_boot_menu(menu_name: str,
     boot_data = load_config()
 
     try:
+
         for img in boot_data.get('bootmenus', []):
             if img.get('menu_name') == menu_name:
                 img.update(menu)
@@ -162,13 +170,17 @@ def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
 
     data = load_config()
 
-    menu = next((m for m in data['bootmenus'] if m.get('menu_name') == menu_name), None)
+    menu = next(
+        (m for m in data['bootmenus'] if m.get('menu_name') == menu_name),
+        None)
 
     if not menu:
         print('Menu %s does not exists' % menu_name)
         return
 
-    image = next((img for img in data['pxeimages'] if img['name'] == menu['image']), None)
+    image = next(
+        (img for img in data['pxeimages'] if img['name'] == menu['image']),
+        None)
 
     if not image:
         print('Can not find a pxe image for menu %s' % menu_name)
@@ -186,8 +198,11 @@ def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
         return False
 
 
-def import_pxe_files(kernel, initrd, os_name, os_version, variant=''):
-    assert variant in ('', 'server')
+def import_pxe_files(kernel: str,
+                     initrd: str,
+                     os_name: str,
+                     os_version: str,
+                     variant: str = ''):
 
     if variant:
         image_path = os.path.join(BOOT_IMAGES_DIR, os_name, variant,
@@ -207,7 +222,8 @@ def import_pxe_files(kernel, initrd, os_name, os_version, variant=''):
     create_pxe_image(name=os_name,
                      version=os_version,
                      kernel=kernel_name,
-                     initrd=initrd_name)
+                     initrd=initrd_name,
+                     variant=variant)
 
 
 def menu():
@@ -242,23 +258,52 @@ def menu():
     import_menu.add_argument('-t',
                              '--variant',
                              metavar='variant',
+                             dest='variant',
                              type=str,
-                             default='',
+                             choices=('server', 'workstation', 'desktop', ''),
                              help='OS Variant, ie. server')
 
     # create menus
     create_menu = subparser.add_parser('create')
-    create_menu.add_argument('-n', '--name', metavar='menuname', dest='menuname', required=True, help='Boot menu name')
-    create_menu.add_argument('-i', '--image', metavar='image', dest='image', required=True,  help='Image ID')
-    create_menu.add_argument('-a', '--boot-args', metavar='boot_args',
-                             dest='boot_args',  required=True, help='Boot arguments')
+    create_menu.add_argument('-n',
+                             '--name',
+                             metavar='menuname',
+                             dest='menuname',
+                             required=True,
+                             help='Boot menu name')
+    create_menu.add_argument('-i',
+                             '--image',
+                             metavar='image',
+                             dest='image',
+                             required=True,
+                             help='Image ID')
+    create_menu.add_argument('-a',
+                             '--boot-args',
+                             metavar='boot_args',
+                             dest='boot_args',
+                             required=True,
+                             help='Boot arguments')
 
     # assign menu to hosts
     assign_menu = subparser.add_parser('assign')
-    assign_menu.add_argument('-m', '--mac', metavar='mac', required=True, help='host MAC Address')
-    assign_menu.add_argument('-n', '--menu', metavar='menu', required=True, help='PXE Menu to assign')
-    assign_menu.add_argument('-b', '--boot-mode', metavar='bootmode', dest='bootmode', choices=('uefi',
-                             'legacy'), default='uefi', help='PXE Menu to assign')
+    assign_menu.add_argument('-m',
+                             '--mac',
+                             metavar='mac',
+                             type=format_mac,
+                             required=True,
+                             help='host MAC Address')
+    assign_menu.add_argument('-n',
+                             '--menu',
+                             metavar='menu',
+                             required=True,
+                             help='PXE Menu to assign')
+    assign_menu.add_argument('-b',
+                             '--boot-mode',
+                             metavar='bootmode',
+                             dest='bootmode',
+                             choices=('uefi', 'legacy'),
+                             default='uefi',
+                             help='PXE Menu to assign')
 
     return parser.parse_args()
 
@@ -267,6 +312,7 @@ def main():
     args = menu()
 
     if args.command == 'import':
+        ensure_config_dir_exists()
         import_pxe_files(os_name=args.name,
                          os_version=args.version,
                          kernel=args.kernel,
@@ -279,4 +325,6 @@ def main():
                          boot_args=args.boot_args)
 
     elif args.command == 'assign':
-        create_boot_file(menu_name=args.menu, mac_addr=args.mac, boot_mode=args.bootmode)
+        create_boot_file(menu_name=args.menu,
+                         mac_addr=args.mac,
+                         boot_mode=args.bootmode)
