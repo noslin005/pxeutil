@@ -27,6 +27,6 @@ insmod ext2
 set timeout=10
 
 menuentry "{{ menu_name }}" {
-    linuxefi   /{{ kernel }} {{ boot_args }}
-    initrdefi  /{{ initrd }}
+    linuxefi   /{{ tftp_dir }}/{{ kernel }} {{ boot_args }}
+    initrdefi  /{{ tftp_dir }}/{{ initrd }}
 }

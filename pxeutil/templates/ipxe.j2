@@ -1,0 +1,17 @@
+#!ipxe
+
+:start
+menu iPXE Boot Options
+item pxeimage  Install {{ menu_name }}
+item exit  Exit to BIOS
+
+choose --default pxeimage --timeout 3600 option && goto ${option}
+
+:pxeimage
+initrd http://${next-server}/os/{{ os_name }}/{{ version }}/{{ initrd }}
+kernel http://${next-server}/os/{{ os_name }}/{{ version }}/{{ kernel }}
+imgargs {{ kernel }} initrd={{ initrd }} {{ boot_args }}
+boot
+
+:exit
+exit

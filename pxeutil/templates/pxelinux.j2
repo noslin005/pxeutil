@@ -5,5 +5,5 @@ TIMEOUT 120
 
 LABEL {{ menu_name }}
     MENU LABEL {{ menu_name }}
-    kernel ::{{ kernel }}
-    append initrd=::{{ initrd }} {{ boot_args }}
+    kernel ::{{ tftp_dir }}/{{ kernel }}
+    append initrd=::{{ tftp_dir }}/{{ initrd }} {{ boot_args }}

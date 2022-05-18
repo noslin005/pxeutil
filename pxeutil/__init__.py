@@ -26,6 +26,9 @@ BIOS_PXE_DIR = f"{TFTP_DIR}/uefi"
 TEMPLATE_DIR = '%s/templates' % MODULE_DIR
 PXEIMAGES_DBFILE = '%s/pxeimages.yaml' % CONFIG_DIR
 
+SUPPORTED_OS = ('redhat', 'fedora', 'ubuntu', 'rocky', 'almalinux', 'centos',
+                'debian', 'grml', 'oraclelinux')
+
 
 def ensure_config_dir_exists():
     try:
@@ -91,19 +94,15 @@ def copy_file(source, destination):
         print(err)
 
 
-def create_pxe_image(name: str, version: str, kernel: str, initrd: str,
+def create_pxe_image(os_name: str, version: str, kernel: str, initrd: str,
                      variant: str):
-    ''' saves a pxe images
-    '''
-
-    tftp_path = 'images/{}/{}/%s/{}' % (
-        variant) if variant else 'images/{}/{}/{}'
+    ''' saves a pxe images'''
 
     image = {
-        'name': name,
+        'os_name': os_name,
         'version': version,
-        'kernel': tftp_path.format(name, version, kernel),
-        'initrd': tftp_path.format(name, version, initrd)
+        'kernel': kernel,
+        'initrd': initrd
     }
 
     # read existing value
@@ -112,7 +111,7 @@ def create_pxe_image(name: str, version: str, kernel: str, initrd: str,
     # If we have an existing image, update it
     try:
         for img in data.get('pxeimages', []):
-            if img.get('name') == name:
+            if img.get('os_name') == os_name:
                 img.update(image)
         if image not in data.get('pxeimages', []):
             data['pxeimages'].append(image)
@@ -159,7 +158,7 @@ def create_boot_menu(menu_name: str,
 
 
 def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
-    assert boot_mode in ('uefi', 'legacy')
+    assert boot_mode in ('uefi', 'legacy', 'ipxe')
 
     if boot_mode == 'uefi':
         template = 'grub.j2'
@@ -167,6 +166,9 @@ def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
     elif boot_mode == 'legacy':
         template = 'pxelinux.j2'
         filename = '/tmp/01-%s' % mac_addr
+    elif boot_mode == 'ipxe':
+        template = 'ipxe.j2'
+        filename = '/tmp/mac-%s.ipxe' % mac_addr
 
     data = load_config()
 
@@ -179,7 +181,7 @@ def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
         return
 
     image = next(
-        (img for img in data['pxeimages'] if img['name'] == menu['image']),
+        (img for img in data['pxeimages'] if img['os_name'] == menu['image']),
         None)
 
     if not image:
@@ -187,6 +189,15 @@ def create_boot_file(menu_name, mac_addr: str, boot_mode: str = 'uefi'):
         return
 
     menu.update(image)
+    variant = menu.get('variant')
+
+    tftp_path = 'images/{}/{}/%s' % (variant) if variant else 'images/{}/{}'
+
+    tftp_path = tftp_path.format(menu.get('os_name'), menu.get('version'))
+
+    menu.update({'tftp_dir': tftp_path})
+
+    print(menu)
 
     try:
         t = load_template(template)
@@ -219,7 +230,7 @@ def import_pxe_files(kernel: str,
     kernel_name = pathlib.Path(kernel).name
     initrd_name = pathlib.Path(initrd).name
 
-    create_pxe_image(name=os_name,
+    create_pxe_image(os_name=os_name,
                      version=os_version,
                      kernel=kernel_name,
                      initrd=initrd_name,
@@ -233,11 +244,12 @@ def menu():
     # import new pxe image
     import_menu = subparser.add_parser('import')
     import_menu.add_argument('-n',
-                             '--name',
-                             metavar='name',
+                             '--os_name',
+                             metavar='os_name',
                              required=True,
                              type=str,
-                             help='OS name')
+                             choices=SUPPORTED_OS,
+                             help='OS Distribuition Name')
     import_menu.add_argument('-v',
                              '--version',
                              metavar='version',
@@ -301,7 +313,7 @@ def menu():
                              '--boot-mode',
                              metavar='bootmode',
                              dest='bootmode',
-                             choices=('uefi', 'legacy'),
+                             choices=('uefi', 'legacy', 'ipxe'),
                              default='uefi',
                              help='PXE Menu to assign')
 
