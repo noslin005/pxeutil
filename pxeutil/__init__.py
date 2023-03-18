@@ -21,7 +21,7 @@ MODULE_DIR = os.path.dirname(os.path.realpath(__file__))
 TFTP_DIR = '/tmp'
 BOOT_IMAGES_DIR = f"{TFTP_DIR}/images"
 UEFI_PXE_DIR = f"{TFTP_DIR}/uefi"
-BIOS_PXE_DIR = f"{TFTP_DIR}/uefi"
+BIOS_PXE_DIR = f"{TFTP_DIR}/bios"
 
 TEMPLATE_DIR = '%s/templates' % MODULE_DIR
 PXEIMAGES_DBFILE = '%s/pxeimages.yaml' % CONFIG_DIR
